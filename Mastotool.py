@@ -165,6 +165,107 @@ class Mastotool:
 					print("%s: %s" % (key, value))
 		print("---")
 
+	def displayHtml(self):
+		top = '''\
+<!DOCTYPE html>
+<html>
+<head>
+<title>Mastodon Backup</title>
+<style type="text/css">
+body {
+	font-family: "mastodon-font-sans-serif",sans-serif;
+	background: #282c37;
+	font-size: 13px;
+	line-height: 18px;
+	font-weight: 400;
+	color: #fff;
+	padding-bottom: 20px;
+	text-rendering: optimizelegibility;
+	-webkit-font-feature-settings: "kern";
+	font-feature-settings: "kern";
+	-webkit-text-size-adjust: none;
+	-moz-text-size-adjust: none;
+	-ms-text-size-adjust: none;
+	text-size-adjust: none;
+	-webkit-tap-highlight-color: transparent;
+	max-width: 80ex;
+}
+article {
+	display: block;
+}
+.status {
+	padding: 8px 10px;
+	border-bottom: 1px solid #393f4f;
+	cursor: default;
+	opacity: 1;
+	-webkit-animation: fade .15s linear;
+	animation: fade .15s linear;
+}
+.status__info {
+	font-size: 15px;
+}
+.status__relative-time {
+	color: #606984;
+	float: right;
+	font-size: 14px;
+}
+.status__display-name {
+	display: block;
+	max-width: 100%;
+	padding-right: 25px;
+	color: #606984;
+}
+.status__display-name, .status__relative-time {
+	text-decoration: none;
+}
+.status__display-name strong {
+	color: #fff;
+}
+.display-name {
+	display: block;
+	max-width: 100%;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.status__avatar {
+	display: none;
+}
+.status__relative-time {
+	color: #606984;
+	float: right;
+	font-size: 14px;
+}
+.status__content {
+	font-size: 15px;
+	line-height: 20px;
+	word-wrap: break-word;
+	font-weight: 400;
+	overflow: hidden;
+	white-space: pre-wrap;
+}
+.status__content a {
+	color: #d9e1e8;
+	text-decoration: none;
+}
+</style>
+</head>
+<body>
+<h1>Mastodon Backup</h1>
+'''
+
+		bottom = '''\
+</body>
+</html>\
+'''
+		print(top)
+		for entry in self.posts:
+			self.displayHtmlEntry(entry)
+		print(bottom)
+
+	def displayHtmlEntry(self, entry):
+		print(entry["raw"])
+
 	def load(self, filename):
 		fp = open(filename, "r")
 		data = json.load(fp)
@@ -179,7 +280,6 @@ class Mastotool:
 			node = etree.fromstring(entry["raw"])
 			entry = self.parseEntry(node)
 			self.posts.append(entry)
-			self.displayEntry(entry)
 
 	def save(self, filename):
 		fp = open(filename, "w")
@@ -191,12 +291,18 @@ COMMAND_HELP = '''
 -b URL		Backup from URL 'http://example.com/@username'
 -l FILENAME	Load from JSON file
 -d		Display all posts
+-h		Display all posts as HTML
 -s FILENAME	Save to JSON file
 '''
 
 def main(argv):
 	m = Mastotool()
 	i = 1
+	
+	if len(argv) == 1:
+		print("Usage: %s [COMMAND]...\n%s" % (argv[0], COMMAND_HELP))
+		sys.exit(2)
+
 	while i < len(argv):
 		a = argv[i]
 		i += 1
@@ -211,13 +317,17 @@ def main(argv):
 				i += 1
 			elif a == "-d":
 				m.display()
+			elif a == "-h":
+				m.displayHtml()
 			elif a == "-s":
 				m.save(argv[i])
 				i += 1
 			else:
 				print("Usage: %s [COMMAND]...\n%s" % (argv[0], COMMAND_HELP))
+				sys.exit(2)
 		else:
 			print("Usage: %s [COMMAND]...\n%s" % (argv[0], COMMAND_HELP))
+			sys.exit(2)
 
 if __name__ == "__main__":
 	main(sys.argv)
