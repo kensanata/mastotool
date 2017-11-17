@@ -32,7 +32,7 @@ To make a backup:
 
 To display that backup:
 
-````
+```
 % ./Mastotool.py -l username.json -d
 ```
 
