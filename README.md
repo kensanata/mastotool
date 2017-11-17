@@ -4,7 +4,8 @@ After a while, you need to be able to back up your Mastodon content,
 and there is currently no way to get anything except your
 follow/block/mute lists.
 
-This is a brute-force scraper.
+This tool downloads all your posts via the public Atom feed and allows
+you to turn this into a HTML file.
 
 It requires Python and `lxml`:
 
@@ -17,29 +18,29 @@ Usage:
 ```
 % ./Mastotool.py -help
 Usage: Mastotool.py [COMMAND]...\n%s
--m          Mirror media (calls wget)
--b URL      Backup from URL 'http://example.com/@username'
--l FILENAME Load from JSON file
--d          Display all posts
--s FILENAME Save to JSON file
+--backup URL      Backup from URL 'http://example.com/@username'
+--load FILENAME   Load from Atom file
+--display         Display all posts as text
+--html            Display all posts as html
+--save FILENAME   Save to Atom file
 ```
 
 To make a backup:
 
 ```
-% ./Mastotool.py -m -b http://example.com/@username -s username.json
+% ./Mastotool.py --backup http://example.com/@username --save username.atom
 ```
 
 To display that backup:
 
 ```
-% ./Mastotool.py -l username.json -d
+% ./Mastotool.py --load username.atom --display
 ```
 
 To generate a HTML file:
 
 ```
-% ./Mastotool.py -l username.json -h > username.html
+% ./Mastotool.py --load username.atom --html > username.html
 ```
 
 Please only use this on your own data.

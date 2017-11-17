@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 # Copyright © 2017 by Mark Damon Hughes. All Rights Reserved.
+# Copyright © 2017 by Alex Schroeder.
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are
@@ -28,306 +29,340 @@
 # ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-import os, sys
+import sys
 import urllib.request, urllib.error
-import subprocess
-import json
 
 try:
-	from lxml import html, etree
+        from lxml import html, etree
 except ModuleNotFoundError as e:
-	print("""Requires lxml http://lxml.de
+        print("""Requires lxml http://lxml.de
 Type:
 sudo pip3 install lxml
-	""", file=sys.stderr)
-	sys.exit(1)
-
-DEBUG = False
-
-def wget(url):
-	rc = subprocess.run(["wget", "-m", url])
-
-def nodeHasClass(node, className):
-	c = node.get("class")
-	if c:
-		words = c.split()
-		return className in words
-	return False
-
-def findNodesWithClass(node, className):
-	nodes = []
-	for n in node.iter():
-		if nodeHasClass(n, className):
-			nodes.append(n)
-	return nodes
-
-def innerText(node):
-	text = ""
-	if DEBUG: print("*** %s: %s" % (etree.tostring(node), node.text))
-	etree.strip_tags(node, "strong", "span")
-	t = node.text
-	if node.tag == "a":
-		if nodeHasClass(node, "hashtag"):
-			# display hashtags as text
-			text += node.text
-		elif nodeHasClass(node, "mention"):
-			# user references as links
-			text += str(etree.tostring(node), "utf-8")
-		else:
-			# move links to their own line
-			text += "\n"+node.get("href")+"\n"
-	elif node.tag == "br":
-		text += "\n"
-	elif node.tag == "p":
-		text += "\n"
-		if node.text:
-			text += node.text
-	elif node.text:
-		text += node.text
-	if node.tail:
-		text += node.tail
-	for n in node:
-		text += innerText(n)
-	return text
+        """, file=sys.stderr)
+        sys.exit(1)
 
 class Mastotool:
-	def __init__(self):
-		self.mirrorMedia = False
-		self.posts = []
+        def __init__(self):
+                self.feed = None
 
-	def backup(self, url):
-		self.posts = []
-		try:
-			while url:
-				response = urllib.request.urlopen(url)
-				pageHTML = response.read()
-				page = html.fromstring(pageHTML)
-				for node in findNodesWithClass(page, "h-entry"):
-					# slow, show progress
-					sys.stderr.write("."); sys.stderr.flush()
-					self.posts.append( self.parseEntry(node) )
-				url = None
-				for node in findNodesWithClass(page, "pagination"):
-					for a in findNodesWithClass(node, "next"):
-						url = a.get("href")
-			print()
-		except urllib.error.HTTPError as e:
-			print("ERROR: %s: %s" % (url, e) );
+        def backup(self, url):
+                self.posts = []
+                try:
+                        # get HTML and get first Atom URL
+                        print("Downloading %s..." % url)
+                        response = urllib.request.urlopen(url)
+                        text = response.read()
+                        parser = etree.HTMLParser()
+                        tree = etree.fromstring(text, parser)
+                        nodes = tree.xpath('//link[@type="application/atom+xml"]/@href',
+                                           namespaces = {"atom": "http://www.w3.org/2005/Atom"})
+                        if len(nodes) == 0:
+                                sys.stderr.write(" Atom feed not found!\n")
+                                sys.exit(3)
+                        url = nodes[0]
 
-	def parseEntry(self, node):
-		entry = {}
-		entry["raw"] = str(etree.tostring(node), encoding="utf-8")
+                        while url is not None:
+                                # get Atom feed from URL
+                                print("Downloading %s..." % url)
+                                response = urllib.request.urlopen(url)
+                                text = response.read()
+                                root = etree.fromstring(text)
 
-		urlNodes = findNodesWithClass(node, "u-url")
-		if urlNodes: entry["url"] = urlNodes[0].get("href")
+                                # merge entry elements with first Atom feed
+                                if self.feed is not None:
+                                        for node in root.xpath('//atom:entry',
+                                                               namespaces = {"atom": "http://www.w3.org/2005/Atom"}):
+                                                self.feed.append(node)
+                                else:
+                                        self.feed = root
 
-		authorNodes = findNodesWithClass(node, "p-author")
-		if authorNodes: entry["author"] = authorNodes[0].get("href")
+                                # get next page
+                                nodes = root.xpath('/atom:feed/atom:link[@rel="next"][@type="application/atom+xml"]/@href',
+                                                   namespaces = {"atom": "http://www.w3.org/2005/Atom"})
+                                if len(nodes) > 0:
+                                        url = nodes[0]
+                                else:
+                                        url = None
+                        print("Done")
+                except urllib.error.HTTPError as e:
+                        print("ERROR: %s: %s" % (url, e));
 
-		displayNameNodes = findNodesWithClass(node, "display-name")
-		if displayNameNodes: entry["display-name"] = innerText(displayNameNodes[0]).strip()
+        def display(self):
+                root = self.feed
+                for xpath in ("atom:title/text()",
+                              "atom:subtitle/text()",
+                              "atom:link[@rel='alternate'][@type='text/html']/text()"):
+                        for value in root.xpath(xpath,
+                                                namespaces = {"atom": "http://www.w3.org/2005/Atom"}):
+                                print(value)
 
-		timeNodes = findNodesWithClass(node, "dt-published")
-		if timeNodes: entry["datetime"] = timeNodes[0].get("value")
+                for entry in root.xpath('//atom:entry',
+                                        namespaces = {"atom": "http://www.w3.org/2005/Atom"}):
+                        self.displayEntry(entry)
 
-		mediaNodes = findNodesWithClass(node, "media-item")
-		if mediaNodes: entry["media"] = self.parseMedia(mediaNodes)
+        def displayEntry(self, entry):
+                print("---")
+                for xpath in ("atom:published/text()",
+                              "atom:link[@rel='alternate'][@type='text/html']/text()",
+                              "atom:content/text()"):
+                        for value in entry.xpath(xpath,
+                                                 namespaces = {"atom": "http://www.w3.org/2005/Atom"}):
+                                # convert to text, if necessary
+                                if value.startswith('<p>'):
+                                        parser = etree.HTMLParser()
+                                        tree = etree.fromstring(value, parser)
+                                        print(etree.tostring(tree, encoding='unicode', method='text'))
+                                else:
+                                        print(value)
 
-		contentNodes = findNodesWithClass(node, "e-content")
-		if contentNodes: entry["content"] = innerText(contentNodes[0]).strip()
-
-		return entry
-
-	def parseMedia(self, nodes):
-		media = []
-		for n in nodes:
-			for child in n:
-				if child.tag == "a" and child.get("href"):
-					url = child.get("href")
-					media.append(url)
-					if self.mirrorMedia:
-						wget(url)
-		return media
-
-	def display(self):
-		for entry in self.posts:
-			self.displayEntry(entry)
-
-	def displayEntry(self, entry):
-		text = ""
-		for key in ("datetime", "url", "author", "display-name", "media", "content"):
-			if key in entry:
-				value = entry[key]
-				if type(value) == list:
-					for it in value:
-						print("%s: %s" % (key, it))
-				else:
-					print("%s: %s" % (key, value))
-		print("---")
-
-	def displayHtml(self):
-		top = '''\
+        def displayHtml(self):
+                top = '''\
 <!DOCTYPE html>
 <html>
 <head>
-<title>Mastodon Backup</title>
+<meta charset="utf-8"/>
+<title>%s</title>
 <style type="text/css">
 body {
-	font-family: "mastodon-font-sans-serif",sans-serif;
-	background: #282c37;
-	font-size: 13px;
-	line-height: 18px;
-	font-weight: 400;
-	color: #fff;
-	padding-bottom: 20px;
-	text-rendering: optimizelegibility;
-	-webkit-font-feature-settings: "kern";
-	font-feature-settings: "kern";
-	-webkit-text-size-adjust: none;
-	-moz-text-size-adjust: none;
-	-ms-text-size-adjust: none;
-	text-size-adjust: none;
-	-webkit-tap-highlight-color: transparent;
-	max-width: 80ex;
+        font-family: "mastodon-font-sans-serif",sans-serif;
+        background: #282c37;
+        font-size: 13px;
+        line-height: 18px;
+        font-weight: 400;
+        color: #fff;
+        padding-bottom: 20px;
+        text-rendering: optimizelegibility;
+        -webkit-font-feature-settings: "kern";
+        font-feature-settings: "kern";
+        -webkit-text-size-adjust: none;
+        -moz-text-size-adjust: none;
+        -ms-text-size-adjust: none;
+        text-size-adjust: none;
+        -webkit-tap-highlight-color: transparent;
+        max-width: 80ex;
 }
-article {
-	display: block;
-}
-.status {
-	padding: 8px 10px;
-	border-bottom: 1px solid #393f4f;
-	cursor: default;
-	opacity: 1;
-	-webkit-animation: fade .15s linear;
-	animation: fade .15s linear;
-}
-.status__info {
-	font-size: 15px;
-}
-.status__relative-time {
+.status__prepend {
+        padding-left: 8px;
+        padding-top: 10px;
 	color: #606984;
-	float: right;
 	font-size: 14px;
+}
+.status__prepend strong {
+	font-weight: 400;
 }
 .status__display-name {
-	display: block;
-	max-width: 100%;
-	padding-right: 25px;
-	color: #606984;
+    color: #606984;
 }
-.status__display-name, .status__relative-time {
-	text-decoration: none;
-}
-.status__display-name strong {
-	color: #fff;
-}
-.display-name {
-	display: block;
-	max-width: 100%;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
-}
-.status__avatar {
-	display: none;
+.status {
+        padding: 8px 10px;
+        border-bottom: 1px solid #393f4f;
+        cursor: default;
+        opacity: 1;
+        -webkit-animation: fade .15s linear;
+        animation: fade .15s linear;
 }
 .status__relative-time {
-	color: #606984;
-	float: right;
-	font-size: 14px;
+        color: #606984;
+        float: right;
+        font-size: 14px;
+}
+.status .status__display-name {
+        display: block;
+        max-width: 100%%;
+        padding-right: 25px;
+        color: #606984;
+        font-size: 15px;
+}
+.status .status__display-name strong {
+        color: #fff;
+}
+.status__display-name, .status__relative-time {
+        text-decoration: none;
+}
+.display-name {
+        display: block;
+        max-width: 100%%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+}
+.status__relative-time {
+        color: #606984;
+        float: right;
+        font-size: 14px;
 }
 .status__content {
-	font-size: 15px;
-	line-height: 20px;
-	word-wrap: break-word;
-	font-weight: 400;
-	overflow: hidden;
-	white-space: pre-wrap;
+        font-size: 15px;
+        line-height: 20px;
+        word-wrap: break-word;
+        font-weight: 400;
+        overflow: hidden;
+        white-space: pre-wrap;
 }
 .status__content a {
-	color: #d9e1e8;
-	text-decoration: none;
+        color: #d9e1e8;
+        text-decoration: none;
 }
 </style>
 </head>
 <body>
-<h1>Mastodon Backup</h1>
+<h1>%s</h1>
+<p>%s</p>
 '''
 
-		bottom = '''\
+                bottom = '''\
 </body>
 </html>\
 '''
-		print(top)
-		for entry in self.posts:
-			self.displayHtmlEntry(entry)
-		print(bottom)
+                root = self.feed
 
-	def displayHtmlEntry(self, entry):
-		print(entry["raw"])
+                title = root.xpath('atom:title/text()',
+                                   namespaces = {"atom": "http://www.w3.org/2005/Atom"})[0]
+                
+                subtitle = root.xpath('atom:subtitle/text()',
+                                      namespaces = {"atom": "http://www.w3.org/2005/Atom"})[0]
 
-	def load(self, filename):
-		fp = open(filename, "r")
-		data = json.load(fp)
-		fp.close()
-		self.posts = []
-		for entry in data:
-			if DEBUG:
-				print("------")
-				print(entry["raw"])
-				print("------")
+                author = root.xpath('atom:author/poco:displayName/text()',
+                                    namespaces = {"atom": "http://www.w3.org/2005/Atom",
+                                                  "poco": "http://portablecontacts.net/spec/1.0"})[0]
 
-			node = etree.fromstring(entry["raw"])
-			entry = self.parseEntry(node)
-			self.posts.append(entry)
+                nick = root.xpath('atom:author/atom:name/text()',
+                                  namespaces = {"atom": "http://www.w3.org/2005/Atom"})[0]
 
-	def save(self, filename):
-		fp = open(filename, "w")
-		data = json.dump(self.posts, fp)
-		fp.close()
+                url = root.xpath('atom:author/atom:id/text()',
+                                 namespaces = {"atom": "http://www.w3.org/2005/Atom"})[0]
+
+                print(top % (title, title, subtitle))
+                for entry in root.xpath('//atom:entry',
+                                        namespaces = {"atom": "http://www.w3.org/2005/Atom"}):
+                        self.displayHtmlEntry(entry, author, nick, url)
+                print(bottom)
+
+        def displayHtmlEntry(self, entry, author, nick, url):
+
+                prepend = '''\
+<div class="status__prepend">
+  <span>
+    <a href="%s" class="status__display-name">
+      <strong>%s</strong>
+    </a>
+    shared
+  </span>
+</div>
+'''
+                
+                status = '''\
+<div class="status">
+  <div class="status__header">
+    <a class="status__relative-time" href="%s">
+      <time class="time-ago" datetime="%s">%s</time>
+    </a>
+    <a class="status__display-name" href="%s">
+      <span class="display-name">
+	<strong>%s</strong>
+	<span>@%s</span>
+      </span>
+    </a>
+  </div>
+  <div class="status__content">%s</div>
+</div>
+'''
+
+                id = entry.xpath('atom:id/text()',
+                                 namespaces = {"atom": "http://www.w3.org/2005/Atom"})[0]
+
+                updated = entry.xpath('atom:updated/text()',
+                                      namespaces = {"atom": "http://www.w3.org/2005/Atom"})[0]
+                
+
+                verb = entry.xpath('activity:verb/text()',
+                                  namespaces = {"activity": "http://activitystrea.ms/spec/1.0/"})[0]
+
+                if verb == 'http://activitystrea.ms/schema/1.0/share':
+                
+                        print(prepend % (id, author))
+
+                        author = entry.xpath('activity:object/atom:author/poco:displayName/text()',
+                                            namespaces = {
+                                                    "activity": "http://activitystrea.ms/spec/1.0/",
+                                                    "atom": "http://www.w3.org/2005/Atom",
+                                                    "poco": "http://portablecontacts.net/spec/1.0"})[0]
+
+                        nick = entry.xpath('activity:object/atom:author/atom:name/text()',
+                                          namespaces = {
+                                                  "activity": "http://activitystrea.ms/spec/1.0/",
+                                                  "atom": "http://www.w3.org/2005/Atom"})[0]
+
+                        url = entry.xpath('activity:object/atom:author/atom:id/text()',
+                                         namespaces = {
+                                                 "activity": "http://activitystrea.ms/spec/1.0/",
+                                                 "atom": "http://www.w3.org/2005/Atom"})[0]
+
+                content = entry.xpath('atom:content/text()',
+                                      namespaces = {
+                                              "atom": "http://www.w3.org/2005/Atom"})[0]
+                parser = etree.HTMLParser()
+                tree = etree.fromstring(content, parser)
+                content = etree.tostring(tree, encoding='unicode', method='html')
+
+                print(status % (id, updated, updated, url, author, nick, content))
+                        
+        def load(self, filename):
+                fp = open(filename, "rb")
+                root = etree.parse(fp)
+                fp.close()
+
+                # merge entry elements with first Atom feed
+                if self.feed:
+                        for node in root.xpath('/root/entry'):
+                                self.feed.append(node)
+                else:
+                        self.feed = root
+
+        def save(self, filename):
+                fp = open(filename, "wb")
+                fp.write(etree.tostring(self.feed, encoding="UTF-8"))
+                fp.close()
 
 COMMAND_HELP = '''
--m		Mirror media (calls wget)
--b URL		Backup from URL 'http://example.com/@username'
--l FILENAME	Load from JSON file
--d		Display all posts
--h		Display all posts as HTML
--s FILENAME	Save to JSON file
+--backup URL     Backup from URL 'http://example.com/@username'
+--load FILENAME  Load from JSON file
+--display        Display all posts
+--html           Display all posts as HTML
+--save FILENAME  Save to JSON file
 '''
 
 def main(argv):
-	m = Mastotool()
-	i = 1
-	
-	if len(argv) == 1:
-		print("Usage: %s [COMMAND]...\n%s" % (argv[0], COMMAND_HELP))
-		sys.exit(2)
+        m = Mastotool()
+        i = 1
+        
+        if len(argv) == 1:
+                print("Usage: %s [COMMAND]...\n%s" % (argv[0], COMMAND_HELP))
+                sys.exit(2)
 
-	while i < len(argv):
-		a = argv[i]
-		i += 1
-		if a.startswith("-"):
-			if a == "-m":
-				m.mirrorMedia = True
-			elif a == "-b":
-				m.backup(argv[i])
-				i += 1
-			elif a == "-l":
-				m.load(argv[i])
-				i += 1
-			elif a == "-d":
-				m.display()
-			elif a == "-h":
-				m.displayHtml()
-			elif a == "-s":
-				m.save(argv[i])
-				i += 1
-			else:
-				print("Usage: %s [COMMAND]...\n%s" % (argv[0], COMMAND_HELP))
-				sys.exit(2)
-		else:
-			print("Usage: %s [COMMAND]...\n%s" % (argv[0], COMMAND_HELP))
-			sys.exit(2)
+        while i < len(argv):
+                a = argv[i]
+                i += 1
+                if a.startswith("--"):
+                        if a == "--backup":
+                                m.backup(argv[i])
+                                i += 1
+                        elif a == "--load":
+                                m.load(argv[i])
+                                i += 1
+                        elif a == "--display":
+                                m.display()
+                        elif a == "--html":
+                                m.displayHtml()
+                        elif a == "--save":
+                                m.save(argv[i])
+                                i += 1
+                        else:
+                                print("Usage: %s [COMMAND]...\n%s" % (argv[0], COMMAND_HELP))
+                                sys.exit(2)
+                else:
+                        print("Usage: %s [COMMAND]...\n%s" % (argv[0], COMMAND_HELP))
+                        sys.exit(2)
 
 if __name__ == "__main__":
-	main(sys.argv)
+        main(sys.argv)
