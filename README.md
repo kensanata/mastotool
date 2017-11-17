@@ -36,4 +36,10 @@ To display that backup:
 % ./Mastotool.py -l username.json -d
 ```
 
+To generate a HTML file:
+
+```
+% ./Mastotool.py -l username.json -h > username.html
+```
+
 Please only use this on your own data.
