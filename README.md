@@ -1,13 +1,20 @@
-# Mastotool
+# Mastotool "Atom"
 
 After a while, you need to be able to back up your Mastodon content,
 and there is currently no way to get anything except your
 follow/block/mute lists.
 
-This tool downloads all your posts via the public Atom feed and allows
-you to turn this into a HTML file.
+This tool downloads all your posts it finds via the public Atom feed.
+Sadly, these are not all of your posts! You will have to resort to
+[screen scraping](https://mdhughes.tech/mastotool/) in order to do
+this.
 
-It requires Python and `lxml`:
+The tool allows you to turn the aggregated Atom feed into a web page.
+The web page will not contain any media attachments, avatars or any of
+that. Mark's [Mastotool](https://mdhughes.tech/mastotool/) mirrors
+media.
+
+If you still want to give it a try: you need Python 3 and `lxml`:
 
 ```
 % sudo pip3 install lxml
