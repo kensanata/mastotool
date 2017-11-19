@@ -7,7 +7,10 @@ follow/block/mute lists.
 This tool downloads all your posts it finds via the public Atom feed.
 Sadly, these are not all of your posts! You will have to resort to
 [screen scraping](https://mdhughes.tech/mastotool/) in order to do
-this.
+this. A better alternative would be to use the Mastodon API to get all
+of your toots (thus requiring a login). [Mastodon
+Backup](https://github.com/kensanata/mastodon-backup#mastodon-backup)
+does that, for example.
 
 The tool allows you to turn the aggregated Atom feed into a web page.
 The web page will not contain any media attachments, avatars or any of
